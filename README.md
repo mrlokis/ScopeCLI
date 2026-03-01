@@ -82,6 +82,7 @@ If you are **not** running as administrator, the launcher will ask for permissio
 - [ ] Self‑update mechanism
 - [ ] Config save/load
 - [ ] Game "assembly" isolation
+- [ ] Localization
 
 ---
 
