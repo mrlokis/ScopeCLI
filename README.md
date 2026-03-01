@@ -80,6 +80,8 @@ If you are **not** running as administrator, the launcher will ask for permissio
 - [ ] Automatic Fabric/Forge/Quilt installation
 - [ ] Multiple profile support
 - [ ] Self‑update mechanism
+- [ ] Config save/load
+- [ ] Game "assembly" isolation
 
 ---
 
