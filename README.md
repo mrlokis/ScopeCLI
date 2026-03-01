@@ -22,7 +22,7 @@ No heavy GUIs, no wasted resources – just a clean, fast terminal interface wit
 Run this single command in **PowerShell 5.1 or higher** (recommended: Run as Administrator):
 
 ```powershell
-powershell.exe iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/mrlokis/ScopeCLI/refs/heads/main/installer.ps1'))
+iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/mrlokis/ScopeCLI/refs/heads/main/installer.ps1'))
 ```
 
 > 💡 If you use PowerShell Core (v7+), the command may differ.  
