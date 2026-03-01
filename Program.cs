@@ -65,26 +65,6 @@ namespace ScopeCLI
                 relaunchOptions = Encoding.UTF8.GetString(Convert.FromBase64String(args[0]));
             }
 
-            // Simulate an initial progress display for system initialization.
-            AnsiConsole.Progress()
-                .HideCompleted(true)
-                .Columns(
-                    new TaskDescriptionColumn(),
-                    new ProgressBarColumn(),
-                    new PercentageColumn(),
-                    new RemainingTimeColumn()
-                )
-                .Start(ctx =>
-                {
-                    var task = ctx.AddTask("Initializing system", maxValue: 100);
-
-                    while (!ctx.IsFinished)
-                    {
-                        task.Increment(10);
-                        Thread.Sleep(10);
-                    }
-                });
-
             AnsiConsole.MarkupLine("[yellow]ScopeLauncher[/] by mrlok_");
             AnsiConsole.MarkupLine("Launcher version: [yellow]0.00.1-dev[/]");
 
