@@ -99,6 +99,11 @@ Feel free to open an [issue](https://github.com/mrlokis/ScopeCLI/issues) or fork
 
 ---
 
+## Known issues
+
+
+---
+
 ## 📄 License
 
 This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
