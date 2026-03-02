@@ -72,18 +72,24 @@ If you are **not** running as administrator, the launcher will ask for permissio
 
 ## 🧱 Current Status & Roadmap
 
-- [x] Interactive terminal UI
-- [x] Mod list download (from URL or local file)
-- [x] Parallel mod downloading with progress
-- [ ] Global memory optimization (admin mode)
-- [x] Auto‑restart with admin rights
-- [ ] Automatic Fabric/Forge/Quilt installation
-- [ ] Multiple profile support
-- [ ] Self‑update mechanism
-- [ ] Config save/load
-- [ ] Game "assembly" isolation
-- [ ] Localization
+### ✅ Done
+- [x] Interactive terminal UI (TUI)
+- [x] Parallel mod downloading with progress bars
+- [x] Support for local and remote mod lists (URL/File)
+- [x] Auto‑restart with admin rights for memory optimization
 
+### 🚧 In Progress / Near Future
+- [ ] **Automatic mod loader installation** (Fabric/Forge/NeoForge/Quilt) with correct version detection.
+- [ ] **Global RAM optimization:** Advanced memory freeing (Admin mode).
+- [ ] **Config save/load:** Persistent profiles for different servers or playstyles.
+- [ ] **Game assembly isolation:** Separate folders for each profile (prevents mod conflicts).
+- [ ] **ModList (.modl) markup language:** Instead of plain text, you can write scripts to install modifications from various sources.
+
+### 🔮 Planned / Future Ideas
+- [ ] **Integration with Modrinth & CurseForge APIs:** Install mods directly by name (`scopecli add sodium`).
+- [ ] **Headless (Batch) mode:** Run launcher with command-line arguments for automation.
+- [ ] **Localization** (i18n) support.
+- [ ] **Self-update mechanism** for the launcher itself.
 ---
 
 ## 🤝 Contributing
