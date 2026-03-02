@@ -22,7 +22,7 @@ No heavy GUIs, no wasted resources – just a clean, fast terminal interface wit
 Run this single command in **PowerShell 5.1 or higher** (recommended: Run as Administrator):
 
 ```powershell
-iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/mrlokis/ScopeCLI/refs/heads/main/installer.ps1'))
+powershell.exe -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/mrlokis/ScopeCLI/refs/heads/main/installer.ps1'))"
 ```
 
 > 💡 If you use PowerShell Core (v7+), the command may differ.  
@@ -58,7 +58,7 @@ You can also provide a **URL** pointing to such a file – the launcher will dow
 
 ---
 
-## ⚙ Global RAM Optimization
+## ⚙ Global RAM Optimization (WIP)
 
 When you enable global optimization, the launcher attempts to free up as much RAM as possible before starting Minecraft:
 
@@ -90,6 +90,7 @@ If you are **not** running as administrator, the launcher will ask for permissio
 - [ ] **Headless (Batch) mode:** Run launcher with command-line arguments for automation.
 - [ ] **Localization** (i18n) support.
 - [ ] **Self-update mechanism** for the launcher itself.
+- [ ] **Microsoft auth** for ingame sessions.
 ---
 
 ## 🤝 Contributing
@@ -99,8 +100,9 @@ Feel free to open an [issue](https://github.com/mrlokis/ScopeCLI/issues) or fork
 
 ---
 
-## Known issues
-
+## ⚠️ Known issues
+- #1 During AoT compilation, the process of transferring settings to the administrator mode does not work. The whole process starts all over again.
+- #2 When downloading modifications, the status bars move.
 
 ---
 
