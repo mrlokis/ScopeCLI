@@ -1,0 +1,75 @@
+name: Publish .NET 10 Self-Contained (win-x64)
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag for release (optional, if not set release will not be created)'
+        required: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Get .NET SDK version
+        id: dotnet-version
+        shell: pwsh
+        run: |
+          $version = dotnet --version
+          echo "DOTNET_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Get application version from csproj
+        id: app-version
+        shell: pwsh
+        run: |
+          $xml = [Xml] (Get-Content ScopeCLI.csproj)
+          $version = $xml.Project.PropertyGroup.Version
+          if (-not $version) { $version = $xml.Project.PropertyGroup.VersionPrefix }
+          if (-not $version) { $version = "0.0.0" }
+          echo "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Publish project
+        shell: pwsh
+        run: |
+          dotnet publish "ScopeCLI.csproj" `
+            -c Release `
+            --self-contained true `
+            -r win-x64 `
+            -p:PublishReadyToRun=true `
+            -p:PublishTrimmed=true `
+            -p:PublishSingleFile=true `
+            -o ./publish_output
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScopeCLI
+          path: ./publish_output
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.tag_name != ''
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: ScopeCLI v${{ env.APP_VERSION }} (.NET ${{ env.DOTNET_VERSION }})
+          body: |
+            Release of **ScopeCLI** version **${{ env.APP_VERSION }}**  
+            Compiled with .NET SDK **${{ env.DOTNET_VERSION }}**  
+            Self‑contained executable for Windows x64.
+          files: ./publish_output/*
+          draft: false
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
