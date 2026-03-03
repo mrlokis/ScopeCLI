@@ -70,7 +70,7 @@ $buttonInstall.Add_Click({
     $installPath = $textBoxPath.Text
     $exeName = "ScopeLauncher.exe"
     $exeFullPath = [System.IO.Path]::Combine($installPath, $exeName)
-    $url = "https://github.com/mrlokis/mc-launcher-test/releases/download/0.00.1/ScopeLauncher.exe"
+    $url = "https://github.com/mrlokis/ScopeCLI/releases/download/0.00.1/ScopeCLI.exe"
 
     $script:targetExePath = $exeFullPath
     $script:targetInstallPath = $installPath
@@ -209,4 +209,5 @@ $result = $form.ShowDialog()
 
 if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
     Write-Host "Installation completed to: $($textBoxPath.Text)"
+
 }
