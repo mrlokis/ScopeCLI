@@ -178,6 +178,7 @@ namespace ScopeCLI
                 foreach (string line in lines)
                 {
                     if (string.IsNullOrWhiteSpace(line)) continue;
+                    if (line.TrimStart().StartsWith('#')) continue;
 
                     string[] parts = line.Split('|', StringSplitOptions.TrimEntries);
                     if (parts.Length == 2)
@@ -290,7 +291,7 @@ namespace ScopeCLI
 
             if (launchGame)
             {
-                LauncherLogic.Run(nickname, gameVersion).Wait();
+                await LauncherLogic.Run(nickname, gameVersion);
             }
         }
     }

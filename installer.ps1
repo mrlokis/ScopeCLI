@@ -7,7 +7,7 @@ $form = new System.Windows.Forms.Form
 $form.Text = "ScopeCLI Installer script for Windows PowerShell"
 $form.Size = new System.Drawing.Size(720, 480)
 $form.StartPosition = "CenterScreen"
-$form.FormBorderStyle = "FixedSingle"
+$form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
 
 $label = new System.Windows.Forms.Label
