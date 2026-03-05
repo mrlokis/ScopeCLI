@@ -3,6 +3,7 @@ using Newtonsoft.Json;
 using ScopeLauncher;
 using Spectre.Console;
 using System.Text;
+using System.Text.Json;
 
 namespace ScopeCLI
 {
@@ -83,11 +84,11 @@ namespace ScopeCLI
             }
 
             // Prompt for nickname if not already set.
-            if (nickname == string.Empty || nickname == null)
+            if (string.IsNullOrEmpty(nickname))
                 nickname = AnsiConsole.Ask<string>("Enter your nickname:");
 
-            // Prompt for mod loader if not already provided (now before mod list input).
-            if (modLoader == string.Empty || modLoader == null)
+            // Prompt for mod loader if not already provided.
+            if (string.IsNullOrEmpty(modLoader))
             {
                 modLoader = AnsiConsole.Prompt<string>(new SelectionPrompt<string>()
                     .Title("Select mod loader:")
@@ -98,149 +99,182 @@ namespace ScopeCLI
             if (!modLoader.Equals("Vanilla", StringComparison.OrdinalIgnoreCase))
             {
                 // Ask for the mods list source (URL or local file path).
-                string modsListFile = AnsiConsole.Ask<string>("Enter mods list (URL/File) [gray](you can drag and drop a file here)[/]:");
+                string modsListFile = AnsiConsole.Ask<string>("Enter mods list (URL/File) [gray](you can drag and drop a file here)[/]:", string.Empty);
 
                 // Remove surrounding quotes if present (common when dragging files into the terminal).
-                modsListFile = modsListFile.Trim();
-                if (modsListFile.StartsWith('"') && modsListFile.EndsWith('"'))
+                if (!string.IsNullOrEmpty(modsListFile))
                 {
-                    modsListFile = modsListFile.Substring(1, modsListFile.Length - 2);
-                }
-                else if (modsListFile.StartsWith('\'') && modsListFile.EndsWith('\''))
-                {
-                    modsListFile = modsListFile.Substring(1, modsListFile.Length - 2);
-                }
+                    modsListFile = modsListFile.Trim();
+                    if (modsListFile.StartsWith('"') && modsListFile.EndsWith('"'))
+                    {
+                        modsListFile = modsListFile.Substring(1, modsListFile.Length - 2);
+                    }
+                    else if (modsListFile.StartsWith('\'') && modsListFile.EndsWith('\''))
+                    {
+                        modsListFile = modsListFile.Substring(1, modsListFile.Length - 2);
+                    }
 
-                string modsListRaw = string.Empty;
-                if (modsListFile.StartsWith("http"))
-                {
-                    // Download the mods list from a URL with progress display.
-                    AnsiConsole.MarkupLine("Downloading mods list from [yellow]URL[/]...");
-                    AnsiConsole.Progress()
-                        .Columns(
-                            new TaskDescriptionColumn(),
-                            new ProgressBarColumn(),
-                            new DownloadedColumn(),
-                            new RemainingTimeColumn()
-                        )
-                        .Start(ctx =>
-                        {
-                            using (var httpClient = new HttpClient())
+                    string modsListRaw = string.Empty;
+                    if (modsListFile.StartsWith("http"))
+                    {
+                        // Download the mods list from a URL with progress display.
+                        AnsiConsole.MarkupLine("Downloading mods list from [yellow]URL[/]...");
+                        AnsiConsole.Progress()
+                            .Columns(
+                                new TaskDescriptionColumn(),
+                                new ProgressBarColumn(),
+                                new DownloadedColumn(),
+                                new RemainingTimeColumn()
+                            )
+                            .Start(ctx =>
                             {
-                                var response = httpClient.GetAsync(modsListFile).Result;
-                                var totalBytes = response.Content.Headers.ContentLength ?? 0;
-
-                                var task = ctx.AddTask("Downloading mods list...", maxValue: totalBytes);
-
-                                using (var stream = response.Content.ReadAsStreamAsync().Result)
-                                using (var ms = new MemoryStream())
+                                using (var httpClient = new HttpClient())
                                 {
-                                    var buffer = new byte[8192];
-                                    int bytesRead;
-                                    long totalBytesRead = 0;
+                                    var response = httpClient.GetAsync(modsListFile).Result;
+                                    var totalBytes = response.Content.Headers.ContentLength ?? 0;
 
-                                    while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+                                    var task = ctx.AddTask("Downloading mods list...", maxValue: totalBytes);
+
+                                    using (var stream = response.Content.ReadAsStreamAsync().Result)
+                                    using (var ms = new MemoryStream())
                                     {
-                                        ms.Write(buffer, 0, bytesRead);
-                                        totalBytesRead += bytesRead;
-                                        task.Increment(bytesRead);
-                                    }
+                                        var buffer = new byte[8192];
+                                        int bytesRead;
+                                        long totalBytesRead = 0;
 
-                                    modsListRaw = Encoding.UTF8.GetString(ms.ToArray());
+                                        while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+                                        {
+                                            ms.Write(buffer, 0, bytesRead);
+                                            totalBytesRead += bytesRead;
+                                            task.Increment(bytesRead);
+                                        }
+
+                                        modsListRaw = Encoding.UTF8.GetString(ms.ToArray());
+                                    }
                                 }
-                            }
+                            });
+                    }
+                    else
+                    {
+                        // Read the mods list from a local file.
+                        if (!File.Exists(modsListFile))
+                        {
+                            AnsiConsole.MarkupLine("[red]File not found. Exiting.[/]");
+                            return;
+                        }
+
+                        try
+                        {
+                            AnsiConsole.MarkupLine("Reading mods list from [yellow]file[/]...");
+                            modsListRaw = File.ReadAllText(modsListFile);
+                        }
+                        catch (Exception ex)
+                        {
+                            AnsiConsole.MarkupLineInterpolated($"[red]Error reading file: {ex.Message}[/]");
+                            return;
+                        }
+                    }
+
+                    // Parse the mods list into a dictionary (filename -> download URL).
+                    Dictionary<string, string> modsList = new Dictionary<string, string>();
+                    string[] lines = modsListRaw.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (string line in lines)
+                    {
+                        if (string.IsNullOrWhiteSpace(line)) continue;
+                        if (line.TrimStart().StartsWith('#')) continue;
+
+                        string[] parts = line.Split('|', StringSplitOptions.TrimEntries);
+                        if (parts.Length == 2)
+                            modsList.TryAdd(parts[0], parts[1]);
+                    }
+
+                    AnsiConsole.MarkupLineInterpolated($"[yellow]Found {modsList.Count} mod(s) in the list.[/]");
+                    if (modsList.Count == 0)
+                    {
+                        AnsiConsole.MarkupLine("[red]No mods to download. Check the file format and content.[/]");
+                        return;
+                    }
+
+                    AnsiConsole.MarkupLine("");
+                    string modsDir = "./modsTmp";
+                    Directory.CreateDirectory(modsDir);
+
+                    // Download all mods in parallel with progress reporting.
+                    await AnsiConsole.Progress()
+                        .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new DownloadedColumn(), new RemainingTimeColumn())
+                        .StartAsync(async ctx =>
+                        {
+                            var tasks = modsList.Select(async kvp =>
+                            {
+                                var fileName = kvp.Key;
+                                var fileUrl = kvp.Value;
+                                var filePath = Path.Combine(modsDir, fileName);
+                                var task = ctx.AddTask($"[green]Downloading[/] {fileName}");
+
+                                try
+                                {
+                                    await DownloadFileWithProgressAsync(fileUrl, filePath, task);
+                                }
+                                catch (Exception ex)
+                                {
+                                    if (File.Exists(filePath))
+                                        File.Delete(filePath);
+                                    AnsiConsole.MarkupLineInterpolated($"[red]Error downloading {fileName}: {ex.Message}[/]");
+                                }
+                                finally
+                                {
+                                    task.StopTask();
+                                }
+                            });
+
+                            await Task.WhenAll(tasks);
                         });
+
+                    AnsiConsole.MarkupLine("[green]All mods downloaded successfully![/]");
+                    AnsiConsole.MarkupLine("");
                 }
                 else
                 {
-                    // Read the mods list from a local file.
-                    if (!File.Exists(modsListFile))
-                    {
-                        AnsiConsole.MarkupLine("[red]File not found. Exiting.[/]");
-                        return;
-                    }
-
-                    try
-                    {
-                        AnsiConsole.MarkupLine("Reading mods list from [yellow]file[/]...");
-                        modsListRaw = File.ReadAllText(modsListFile);
-                    }
-                    catch (Exception ex)
-                    {
-                        AnsiConsole.MarkupLineInterpolated($"[red]Error reading file: {ex.Message}[/]");
-                        return;
-                    }
+                    // User didn't provide a mods list – just skip download, but continue.
+                    AnsiConsole.MarkupLine("[yellow]No mods list provided – skipping mod download.[/]");
                 }
-
-                // Parse the mods list into a dictionary (filename -> download URL).
-                Dictionary<string, string> modsList = new Dictionary<string, string>();
-                string[] lines = modsListRaw.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (string line in lines)
-                {
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-                    if (line.TrimStart().StartsWith('#')) continue;
-
-                    string[] parts = line.Split('|', StringSplitOptions.TrimEntries);
-                    if (parts.Length == 2)
-                        modsList.TryAdd(parts[0], parts[1]);
-                }
-
-                AnsiConsole.MarkupLineInterpolated($"[yellow]Found {modsList.Count} mod(s) in the list.[/]");
-                if (modsList.Count == 0)
-                {
-                    AnsiConsole.MarkupLine("[red]No mods to download. Check the file format and content.[/]");
-                    return;
-                }
-
-                AnsiConsole.MarkupLine("");
-                string modsDir = "./modsTmp";
-                Directory.CreateDirectory(modsDir);
-
-                // Download all mods in parallel with progress reporting.
-                await AnsiConsole.Progress()
-                    .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new DownloadedColumn(), new RemainingTimeColumn())
-                    .StartAsync(async ctx =>
-                    {
-                        var tasks = modsList.Select(async kvp =>
-                        {
-                            var fileName = kvp.Key;
-                            var fileUrl = kvp.Value;
-                            var filePath = Path.Combine(modsDir, fileName);
-                            var task = ctx.AddTask($"[green]Downloading[/] {fileName}");
-
-                            try
-                            {
-                                await DownloadFileWithProgressAsync(fileUrl, filePath, task);
-                            }
-                            catch (Exception ex)
-                            {
-                                if (File.Exists(filePath))
-                                    File.Delete(filePath);
-                                AnsiConsole.MarkupLineInterpolated($"[red]Error downloading {fileName}: {ex.Message}[/]");
-                            }
-                            finally
-                            {
-                                task.StopTask();
-                            }
-                        });
-
-                        await Task.WhenAll(tasks);
-                    });
-
-                AnsiConsole.MarkupLine("[green]All mods downloaded successfully![/]");
-                AnsiConsole.MarkupLine("");
             }
             else
             {
-                AnsiConsole.MarkupLine("[yellow]Vanilla[/] selected – skipping mod download.");
+                AnsiConsole.MarkupLine("[yellow]Vanilla selected – no mods will be downloaded.[/]");
             }
 
-            // Prompt for game version if not already provided.
-            if (gameVersion == string.Empty || gameVersion == null)
-                gameVersion = AnsiConsole.Ask<string>($"Enter game version [gray]({modLoader})[/]:");
+            // --- Determine the final game version with loader suffix ---
+            string finalGameVersion;
+
+            if (string.IsNullOrEmpty(gameVersion))
+            {
+                // No pre-set version – ask user.
+                string baseVersion = AnsiConsole.Ask<string>($"Enter game version [gray]({modLoader})[/]:");
+                if (modLoader.Equals("Vanilla", StringComparison.OrdinalIgnoreCase))
+                {
+                    finalGameVersion = baseVersion;
+                }
+                else
+                {
+                    finalGameVersion = $"{baseVersion}-{modLoader.ToLower()}";
+                }
+            }
             else
             {
-                AnsiConsole.MarkupLineInterpolated($"Selected game version: [green]{gameVersion}-{modLoader.ToLower()}[/]");
+                // Version already known (from relaunch arguments or previous input).
+                if (modLoader.Equals("Vanilla", StringComparison.OrdinalIgnoreCase))
+                {
+                    finalGameVersion = gameVersion;
+                }
+                else
+                {
+                    string suffix = "-" + modLoader.ToLower();
+                    // Avoid adding suffix twice if it's already there.
+                    finalGameVersion = gameVersion.EndsWith(suffix) ? gameVersion : gameVersion + suffix;
+                }
+
+                AnsiConsole.MarkupLineInterpolated($"Selected game version: [green]{finalGameVersion}[/]");
             }
 
             // Display system RAM information.
@@ -261,7 +295,7 @@ namespace ScopeCLI
             AnsiConsole.MarkupLine("[gray]================================================[/]");
 
             bool optimizeRamUsage = false;
-            if (NativeHelpers.IsAdministrator() == false)
+            if (!NativeHelpers.IsAdministrator())
             {
                 optimizeRamUsage = AnsiConsole.Confirm("Enable [red]global[/] optimization? [gray](require admin and restart)[/]");
             }
@@ -277,7 +311,7 @@ namespace ScopeCLI
                 GlobalOptimizer.AdminLaunchSettings relaunchSettings = new GlobalOptimizer.AdminLaunchSettings
                 {
                     accountNickName = nickname,
-                    gameVersion = gameVersion,
+                    gameVersion = finalGameVersion,   // use the fully qualified version
                     modLoader = modLoader
                 };
                 string jsonRelaunch = JsonConvert.SerializeObject(relaunchSettings);
@@ -291,7 +325,7 @@ namespace ScopeCLI
 
             if (launchGame)
             {
-                await LauncherLogic.Run(nickname, gameVersion);
+                await LauncherLogic.Run(nickname, finalGameVersion);
             }
         }
     }
