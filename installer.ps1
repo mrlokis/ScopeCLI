@@ -1,3 +1,37 @@
+<#
+.SYNOPSIS
+    Graphical installer for ScopeCLI on Windows.
+
+.DESCRIPTION
+    This script provides a user-friendly wizard to download and install
+    ScopeLauncher.exe from the official GitHub repository. It allows you to
+    choose an installation folder, monitors the download progress, and
+    automatically creates a desktop shortcut upon successful completion.
+
+    The installer is written in pure PowerShell using Windows Forms and
+    runs on any Windows machine with PowerShell 3.0 or later.
+
+.PARAMETER None
+    This script does not accept command-line parameters. All settings are
+    configured via the graphical interface.
+
+.EXAMPLE
+    .\ScopeCLI-Installer.ps1
+    Launches the installer window. Follow the on-screen instructions.
+
+.NOTES
+    Author      : Based on community script
+    Version     : 1.0
+    Requirements: Windows PowerShell 3.0+, Internet connection,
+                  Execution policy allowing scripts (or use bypass).
+
+    The downloaded executable is placed in the selected folder and a
+    shortcut named "ScopeLauncher.lnk" is created on the desktop.
+
+.LINK
+    https://github.com/mrlokis/mc-launcher-test/releases/download/0.00.1/ScopeLauncher.exe
+#>
+
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.IO
 
@@ -68,9 +102,9 @@ $buttonInstall.Add_Click({
     $form.Refresh()
 
     $installPath = $textBoxPath.Text
-    $exeName = "ScopeLauncher.exe"
+    $exeName = "ScopeCLI.exe"
     $exeFullPath = [System.IO.Path]::Combine($installPath, $exeName)
-    $url = "https://github.com/mrlokis/mc-launcher-test/releases/download/0.00.1/ScopeLauncher.exe"
+    $url = "https://github.com/mrlokis/ScopeCLI/releases/download/0.00.1/ScopeCLI.exe"
 
     $script:targetExePath = $exeFullPath
     $script:targetInstallPath = $installPath
