@@ -133,7 +133,6 @@ namespace ScopeCLI
                 }
             }
 
-            // Второй проход: для разрешённого explorer.exe проверяем его дочерние процессы
             var explorerProcess = allProcesses.FirstOrDefault(p =>
             {
                 try
@@ -166,7 +165,7 @@ namespace ScopeCLI
                     }
                     catch (ArgumentException)
                     {
-                        // Процесс уже завершился
+
                     }
                     catch (Exception ex)
                     {

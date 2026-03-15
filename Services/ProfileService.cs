@@ -42,7 +42,7 @@ namespace ScopeCLI.Services
                     });
             }
 
-            if (File.Exists(Path.Combine("profiles_data", profile.ShortId, "mods.zip")))
+            if (profile.Mods.Count() != 0 && File.Exists(Path.Combine("profiles_data", profile.ShortId, "mods.zip")))
             {
                 await AnsiConsole.Progress()
                     .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn(), new RemainingTimeColumn())
@@ -51,6 +51,14 @@ namespace ScopeCLI.Services
                         var task = ctx.AddTask("[green]Restoring mods from archive[/]");
                         await _archiveService.ExtractModsArchiveAsync(profile.ShortId, "./minecraft", task);
                     });
+            }
+            else
+            {
+                string modsFolder = Path.Combine("minecraft", "mods");
+                if (Directory.Exists(modsFolder))
+                {
+                    Directory.Delete(modsFolder, true);
+                }
             }
         }
 
