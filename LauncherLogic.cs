@@ -6,27 +6,17 @@ using CmlLib.Core.ModLoaders.FabricMC;
 using CmlLib.Core.ProcessBuilder;
 using Spectre.Console;
 
-namespace ScopeLauncher
+namespace ScopeCLI
 {
-    /// <summary>
-    /// Provides the core launcher logic for installing and running Minecraft,
-    /// including support for Forge and Fabric mod loaders.
-    /// </summary>
     internal class LauncherLogic
     {
-        /// <summary>
-        /// Asynchronously runs the Minecraft launcher with the specified player nickname and version.
-        /// Automatically detects and installs Forge or Fabric if present in the version string.
-        /// </summary>
-        /// <param name="nickname">The player's nickname for offline session.</param>
-        /// <param name="version">The Minecraft version identifier (e.g., "1.19.2", "1.18.2-forge", "1.20.1-fabric").</param>
-        /// <returns>A task representing the asynchronous operation.</returns>
         internal static async Task Run(string nickname, string version)
         {
             var path = new MinecraftPath("./minecraft");
             var launcher = new MinecraftLauncher(path);
             var forgeInstaller = new ForgeInstaller(launcher);
             string versionName = version;
+            bool isModLoader = version.Contains("forge") || version.Contains("fabric");
 
             await AnsiConsole.Progress()
                 .Columns(
@@ -36,167 +26,207 @@ namespace ScopeLauncher
                 )
                 .StartAsync(async ctx =>
                 {
-                    ProgressTask? forgeFileTask = null;
-                    ProgressTask? forgeByteTask = null;
-                    ProgressTask? forgeLogTask = null;
+                    string versionsDir = Path.Combine(path.BasePath, "versions");
+                    string? installedVersion = null;
 
-                    ProgressTask? fabricFileTask = null;
-                    ProgressTask? fabricByteTask = null;
-                    ProgressTask? fabricLogTask = null;
-
-                    // 1. Forge installation
-                    if (version.Contains("forge"))
+                    if (Directory.Exists(versionsDir))
                     {
-                        string baseVersion = version.Replace("-forge", "");
+                        installedVersion = FindInstalledVersion(version, versionsDir);
+                    }
 
-                        forgeFileTask = ctx.AddTask("[yellow]Forge: preparing files[/]");
-                        forgeByteTask = ctx.AddTask("[yellow]Forge: downloading[/]");
-                        forgeLogTask = ctx.AddTask("[yellow]Forge: log[/]");
-                        forgeLogTask.IsIndeterminate = true;
-
-                        var forgeFileProgress = new Progress<InstallerProgressChangedEventArgs>(e =>
+                    if (installedVersion != null)
+                    {
+                        versionName = installedVersion;
+                        var infoTask = ctx.AddTask("[grey]Checking installed versions...[/]");
+                        infoTask.MaxValue = 1;
+                        infoTask.Value = 1;
+                        infoTask.Description = $"[green]Found existing version: {versionName}[/]";
+                    }
+                    else
+                    {
+                        if (version.Contains("forge"))
                         {
-                            if (forgeFileTask != null)
+                            string baseVersion = version.Replace("-forge", "");
+
+                            var forgeFileTask = ctx.AddTask("[yellow]Forge: preparing files[/]");
+                            var forgeByteTask = ctx.AddTask("[yellow]Forge: downloading[/]");
+                            var forgeLogTask = ctx.AddTask("[yellow]Forge: log[/]");
+                            forgeLogTask.IsIndeterminate = true;
+
+                            var forgeFileProgress = new Progress<InstallerProgressChangedEventArgs>(e =>
                             {
                                 forgeFileTask.MaxValue = e.TotalTasks;
                                 forgeFileTask.Value = e.ProgressedTasks;
                                 forgeFileTask.Description = $"[yellow]Forge: {e.Name ?? "files"}[/]";
-                            }
-                        });
+                            });
 
-                        var forgeByteProgress = new Progress<ByteProgress>(e =>
-                        {
-                            if (forgeByteTask != null)
+                            var forgeByteProgress = new Progress<ByteProgress>(e =>
                             {
                                 forgeByteTask.MaxValue = e.TotalBytes;
                                 forgeByteTask.Value = e.ProgressedBytes;
-                            }
-                        });
+                            });
 
-                        var forgeOutput = new Progress<string>(msg =>
-                        {
-                            if (forgeLogTask != null)
+                            var forgeOutput = new Progress<string>(msg =>
                             {
                                 forgeLogTask.Description = $"[yellow]Forge: {msg.EscapeMarkup()}[/]";
-                            }
-                        });
+                            });
 
-                        versionName = await forgeInstaller.Install(baseVersion, new ForgeInstallOptions
-                        {
-                            FileProgress = forgeFileProgress,
-                            ByteProgress = forgeByteProgress,
-                            InstallerOutput = forgeOutput
-                        });
+                            versionName = await forgeInstaller.Install(baseVersion, new ForgeInstallOptions
+                            {
+                                FileProgress = forgeFileProgress,
+                                ByteProgress = forgeByteProgress,
+                                InstallerOutput = forgeOutput
+                            });
 
-                        if (forgeFileTask != null)
-                        {
                             forgeFileTask.Value = forgeFileTask.MaxValue;
                             forgeFileTask.Description = "[green]Forge: files ready[/]";
-                        }
-                        if (forgeByteTask != null)
-                        {
                             forgeByteTask.Value = forgeByteTask.MaxValue;
                             forgeByteTask.Description = "[green]Forge: download complete[/]";
-                        }
-                        if (forgeLogTask != null)
-                        {
                             forgeLogTask.Description = "[green]Forge: installation complete[/]";
                             forgeLogTask.IsIndeterminate = false;
                             forgeLogTask.Value = 100;
                         }
-                    }
-
-                    // 2. Fabric installation
-                    else if (version.Contains("fabric"))
-                    {
-                        string baseVersion = version.Replace("-fabric", "");
-
-                        // Create progress tasks for Fabric
-                        fabricFileTask = ctx.AddTask("[aqua]Fabric: preparing files[/]");
-                        fabricByteTask = ctx.AddTask("[aqua]Fabric: downloading[/]");
-                        fabricLogTask = ctx.AddTask("[aqua]Fabric: log[/]");
-                        fabricLogTask.IsIndeterminate = true;
-
-                        var fabricFileProgress = new Progress<InstallerProgressChangedEventArgs>(e =>
+                        else if (version.Contains("fabric"))
                         {
-                            if (fabricFileTask != null)
+                            string baseVersion = version.Replace("-fabric", "");
+
+                            var fabricFileTask = ctx.AddTask("[aqua]Fabric: preparing files[/]");
+                            var fabricByteTask = ctx.AddTask("[aqua]Fabric: downloading[/]");
+                            var fabricLogTask = ctx.AddTask("[aqua]Fabric: log[/]");
+                            fabricLogTask.IsIndeterminate = true;
+
+                            var fabricFileProgress = new Progress<InstallerProgressChangedEventArgs>(e =>
                             {
                                 fabricFileTask.MaxValue = e.TotalTasks;
                                 fabricFileTask.Value = e.ProgressedTasks;
                                 fabricFileTask.Description = $"[aqua]Fabric: {e.Name ?? "files"}[/]";
-                            }
-                        });
+                            });
 
-                        var fabricByteProgress = new Progress<ByteProgress>(e =>
-                        {
-                            if (fabricByteTask != null)
+                            var fabricByteProgress = new Progress<ByteProgress>(e =>
                             {
                                 fabricByteTask.MaxValue = e.TotalBytes;
                                 fabricByteTask.Value = e.ProgressedBytes;
-                            }
-                        });
+                            });
 
-                        var fabricOutput = new Progress<string>(msg =>
-                        {
-                            if (fabricLogTask != null)
+                            var fabricOutput = new Progress<string>(msg =>
                             {
                                 fabricLogTask.Description = $"[aqua]Fabric: {msg.EscapeMarkup()}[/]";
-                            }
-                        });
+                            });
 
-                        // Create Fabric installer
-                        var fabricInstaller = new FabricInstaller(new HttpClient());
+                            var fabricInstaller = new FabricInstaller(new HttpClient());
 
-                        // Install the latest Fabric Loader for the specified Minecraft version
-                        // (use overload with loaderVersion for a specific version)
-                        versionName = await fabricInstaller.Install(baseVersion, path);
+                            versionName = await fabricInstaller.Install(baseVersion, path);
 
-                        // Finalize progress tasks
-                        if (fabricFileTask != null)
-                        {
                             fabricFileTask.Value = fabricFileTask.MaxValue;
                             fabricFileTask.Description = "[green]Fabric: files ready[/]";
-                        }
-                        if (fabricByteTask != null)
-                        {
                             fabricByteTask.Value = fabricByteTask.MaxValue;
                             fabricByteTask.Description = "[green]Fabric: download complete[/]";
-                        }
-                        if (fabricLogTask != null)
-                        {
                             fabricLogTask.Description = "[green]Fabric: installation complete[/]";
                             fabricLogTask.IsIndeterminate = false;
                             fabricLogTask.Value = 100;
                         }
+
+                        var fileTask = ctx.AddTask("[green]Minecraft: files[/]");
+                        var byteTask = ctx.AddTask("[blue]Minecraft: downloading[/]");
+
+                        launcher.FileProgressChanged += (sender, args) =>
+                        {
+                            fileTask.MaxValue = args.TotalTasks;
+                            fileTask.Value = args.ProgressedTasks;
+                        };
+
+                        launcher.ByteProgressChanged += (sender, args) =>
+                        {
+                            byteTask.MaxValue = args.TotalBytes;
+                            byteTask.Value = args.ProgressedBytes;
+                        };
+
+                        await launcher.InstallAsync(versionName);
                     }
 
-                    // 3. Main Minecraft installation (always performed)
-                    var fileTask = ctx.AddTask("[green]Minecraft: files[/]");
-                    var byteTask = ctx.AddTask("[blue]Minecraft: downloading[/]");
-
-                    launcher.FileProgressChanged += (sender, args) =>
+                    if (isModLoader)
                     {
-                        fileTask.MaxValue = args.TotalTasks;
-                        fileTask.Value = args.ProgressedTasks;
-                    };
+                        var modCopyTask = ctx.AddTask("[yellow]Copying mods[/]");
+                        string sourceModsDir = Path.Combine(Directory.GetCurrentDirectory(), "modsTmp");
+                        string targetModsDir = Path.Combine(path.BasePath, "mods");
 
-                    launcher.ByteProgressChanged += (sender, args) =>
-                    {
-                        byteTask.MaxValue = args.TotalBytes;
-                        byteTask.Value = args.ProgressedBytes;
-                    };
+                        if (Directory.Exists(sourceModsDir))
+                        {
+                            try
+                            {
+                                string[] files = Directory.GetFiles(sourceModsDir, "*", SearchOption.AllDirectories);
+                                modCopyTask.MaxValue = files.Length;
+                                modCopyTask.Value = 0;
 
-                    await launcher.InstallAsync(versionName);
+                                Directory.CreateDirectory(targetModsDir);
+
+                                for (int i = 0; i < files.Length; i++)
+                                {
+                                    string filePath = files[i];
+                                    string destFile = filePath.Replace(sourceModsDir, targetModsDir);
+                                    string destDir = Path.GetDirectoryName(destFile)!;
+                                    Directory.CreateDirectory(destDir);
+                                    File.Copy(filePath, destFile, overwrite: true);
+
+                                    modCopyTask.Value = i + 1;
+                                    modCopyTask.Description = $"[yellow]Copying mods: {Path.GetFileName(filePath)}[/]";
+                                }
+
+                                Directory.Delete(sourceModsDir, recursive: true);
+                                modCopyTask.Description = "[green]Mods copied and temporary folder removed[/]";
+                            }
+                            catch (Exception ex)
+                            {
+                                modCopyTask.Description = $"[red]Error copying mods: {ex.Message.EscapeMarkup()}[/]";
+                                modCopyTask.Value = modCopyTask.MaxValue;
+                            }
+                        }
+                        else
+                        {
+                            modCopyTask.MaxValue = 1;
+                            modCopyTask.Value = 1;
+                            modCopyTask.Description = "[grey]No mods to copy[/]";
+                        }
+                    }
                 });
 
-            // 4. Launch the game
             var process = await launcher.BuildProcessAsync(versionName, new MLaunchOption
             {
                 Session = MSession.CreateOfflineSession(nickname),
-                MaximumRamMb = 4096
+                MaximumRamMb = 2048
             });
 
             process.Start();
+        }
+
+        private static string? FindInstalledVersion(string versionInput, string versionsDir)
+        {
+            var directories = Directory.GetDirectories(versionsDir)
+                                       .Select(Path.GetFileName)
+                                       .ToArray();
+
+            if (!versionInput.Contains("forge") && !versionInput.Contains("fabric"))
+            {
+                return directories.FirstOrDefault(d => d == versionInput);
+            }
+
+            if (versionInput.Contains("forge"))
+            {
+                string baseVersion = versionInput.Replace("-forge", "");
+
+                return directories.FirstOrDefault(d =>
+                    d.Contains(baseVersion) && d.Contains("forge", StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (versionInput.Contains("fabric"))
+            {
+                string baseVersion = versionInput.Replace("-fabric", "");
+
+                return directories.FirstOrDefault(d =>
+                    d.Contains(baseVersion) && d.Contains("fabric", StringComparison.OrdinalIgnoreCase));
+            }
+
+            return null;
         }
     }
 }

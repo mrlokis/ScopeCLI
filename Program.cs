@@ -1,241 +1,187 @@
-﻿using Humanizer;
+﻿using System.Text;
 using Newtonsoft.Json;
-using ScopeLauncher;
 using Spectre.Console;
-using System.Text;
-using System.Text.Json;
+using ScopeCLI.Models;
+using ScopeCLI.Services;
+using Humanizer;
+using Profile = ScopeCLI.Models.Profile;
 
 namespace ScopeCLI
 {
-    /// <summary>
-    /// The main entry point for the ScopeCLI application, which handles mod downloading,
-    /// user interaction, and launching the game with optional system optimizations.
-    /// </summary>
-    public class Program
+    public static class Program
     {
-        private static readonly HttpClient httpClient = new HttpClient();
+        private static readonly ProfileService _profileService = new ProfileService();
+        private static Profile? _activeProfile;
 
-        /// <summary>
-        /// Downloads a file from the specified URL to a local path while reporting progress
-        /// to a Spectre.Console ProgressTask.
-        /// </summary>
-        /// <param name="url">The URL of the file to download.</param>
-        /// <param name="destinationPath">The local file path where the downloaded file will be saved.</param>
-        /// <param name="task">The Spectre.Console ProgressTask used to report download progress.</param>
-        /// <param name="cancellationToken">A cancellation token to cancel the download operation.</param>
-        /// <returns>A task representing the asynchronous download operation.</returns>
-        /// <exception cref="HttpRequestException">Thrown if the HTTP response is not successful.</exception>
-        private static async Task DownloadFileWithProgressAsync(string url, string destinationPath, ProgressTask task, CancellationToken cancellationToken = default)
+        public static async Task Main(string[] args)
         {
-            using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            response.EnsureSuccessStatusCode();
-
-            var totalBytes = response.Content.Headers.ContentLength ?? -1;
-            task.MaxValue(totalBytes > 0 ? totalBytes : 0);
-
-            await using var contentStream = await response.Content.ReadAsStreamAsync();
-            await using var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
-
-            var buffer = new byte[8192];
-            long totalBytesRead = 0;
-            int bytesRead;
-            while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken)) > 0)
+            while (true)
             {
-                await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-                totalBytesRead += bytesRead;
-                if (totalBytes > 0)
-                    task.Increment(bytesRead);
+                if (args.Length == 1 && !string.IsNullOrEmpty(args[0]))
+                {
+                    await HandleAdminRelaunch(args[0]);
+                    return;
+                }
+
+                AnsiConsole.MarkupLine("[yellow]ScopeLauncher[/] by mrlok_");
+                AnsiConsole.MarkupLine("Launcher version: [yellow]0.00.1-dev[/]");
+
+                var profile = await SelectOrCreateProfileAsync();
+                if (profile == null)
+                {
+                    await _profileService.SaveStateAsync(_activeProfile);
+                    AnsiConsole.MarkupLine("[yellow]Exiting...[/]");
+                    return;
+                }
+
+                await _profileService.SwitchProfileAsync(_activeProfile, profile);
+                _activeProfile = profile;
+
+                ShowMemoryInfo();
+
+                if (!NativeHelpers.IsAdministrator())
+                {
+                    bool optimize = AnsiConsole.Confirm("Enable [red]global[/] optimization? [gray](require admin and restart)[/]", false);
+                    if (optimize)
+                    {
+                        RequestAdminRelaunch(profile);
+                        return;
+                    }
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine("[red]Global[/] optimization is enabled!");
+                    AnsiConsole.MarkupLine("[green]You need to restart your computer[/] [underline]after the game[/][green] to get everything back![/]");
+                }
+
+                bool connectToServer = AnsiConsole.Confirm("Connect to server?");
+                string serverAddress = profile.ServerAddress ?? "";
+                if (connectToServer)
+                {
+                    serverAddress = AnsiConsole.Ask("Enter server address (address:port):", serverAddress);
+                }
+
+                bool launchGame = AnsiConsole.Confirm("Launch the game?");
+                if (launchGame)
+                {
+                    await LauncherLogic.Run(profile.Nickname, profile.GameVersion);
+                    return;
+                }
+
+                AnsiConsole.MarkupLine("[yellow]Returning to profile selection...[/]");
+                Console.Clear();
             }
         }
 
-        /// <summary>
-        /// The main asynchronous entry point of the application.
-        /// Handles user input, downloads mods, configures launch settings,
-        /// and optionally launches the game with RAM optimization.
-        /// </summary>
-        /// <param name="args">
-        /// Command-line arguments. If exactly one argument is provided, it is expected to be
-        /// a Base64-encoded JSON string containing launch settings (nickname, game version, mod loader)
-        /// for an administrator-restarted instance.
-        /// </param>
-        public static async Task Main(string[] args)
+        private static async Task<Profile?> SelectOrCreateProfileAsync()
         {
-            string relaunchOptions = string.Empty;
-            if (args.Length == 1)
+            string profilesDir = "profiles";
+            Directory.CreateDirectory(profilesDir);
+            var profileFiles = Directory.GetFiles(profilesDir, "*.upf").ToList();
+            var profileChoices = new List<string>();
+            var profileMap = new Dictionary<string, string>();
+
+            foreach (var file in profileFiles)
             {
-                relaunchOptions = Encoding.UTF8.GetString(Convert.FromBase64String(args[0]));
+                try
+                {
+                    var json = File.ReadAllText(file);
+                    var profile = JsonConvert.DeserializeObject<Profile>(json);
+                    if (profile != null)
+                    {
+                        string display = $"{profile.Name} ({profile.ShortId})";
+                        profileChoices.Add(display);
+                        profileMap[display] = file;
+                    }
+                }
+                catch { }
             }
 
-            AnsiConsole.MarkupLine("[yellow]ScopeLauncher[/] by mrlok_");
-            AnsiConsole.MarkupLine("Launcher version: [yellow]0.00.1-dev[/]");
+            profileChoices.Add("Create new profile");
+            profileChoices.Add("Exit");
 
-            string nickname = string.Empty;
-            string gameVersion = string.Empty;
-            string modLoader = string.Empty;
-            GlobalOptimizer.AdminLaunchSettings launchSettings = new GlobalOptimizer.AdminLaunchSettings();
+            var selectedDisplay = AnsiConsole.Prompt(new SelectionPrompt<string>()
+                .Title("Select profile")
+                .AddChoices(profileChoices));
 
-            // If relaunch options were provided, deserialize them and extract values.
-            if (relaunchOptions != string.Empty)
+            if (selectedDisplay == "Exit")
+                return null;
+
+            if (selectedDisplay == "Create new profile")
             {
-                launchSettings = JsonConvert.DeserializeObject<GlobalOptimizer.AdminLaunchSettings>(relaunchOptions);
-                nickname = launchSettings.accountNickName;
-                gameVersion = launchSettings.gameVersion;
-                modLoader = launchSettings.modLoader;
+                return await CreateNewProfileAsync();
             }
-
-            // Prompt for nickname if not already set.
-            if (string.IsNullOrEmpty(nickname))
-                nickname = AnsiConsole.Ask<string>("Enter your nickname:");
-
-            // Prompt for mod loader if not already provided.
-            if (string.IsNullOrEmpty(modLoader))
+            else
             {
-                modLoader = AnsiConsole.Prompt<string>(new SelectionPrompt<string>()
-                    .Title("Select mod loader:")
-                    .AddChoices("Vanilla", "Forge", "NeoForge", "Fabric"));
+                string path = profileMap[selectedDisplay];
+                var json = File.ReadAllText(path);
+                return JsonConvert.DeserializeObject<Profile>(json);
             }
+        }
 
-            // Only ask for mods list and download if a modded loader is selected.
+        private static async Task<Profile> CreateNewProfileAsync()
+        {
+            string nickname = AnsiConsole.Ask<string>("Enter your nickname:");
+            string modLoader = AnsiConsole.Prompt(new SelectionPrompt<string>()
+                .Title("Select mod loader:")
+                .AddChoices("Vanilla", "Forge", "Fabric"));
+
+            List<ModEntry> mods = new List<ModEntry>();
             if (!modLoader.Equals("Vanilla", StringComparison.OrdinalIgnoreCase))
             {
-                // Ask for the mods list source (URL or local file path).
-                string modsListFile = AnsiConsole.Ask<string>("Enter mods list (URL/File) [gray](you can drag and drop a file here)[/]:", string.Empty);
-
-                // Remove surrounding quotes if present (common when dragging files into the terminal).
+                string modsListFile = AnsiConsole.Ask<string>("Enter mods list (URL/File) [gray]you can drag and drop a file here[/]", string.Empty);
                 if (!string.IsNullOrEmpty(modsListFile))
                 {
-                    modsListFile = modsListFile.Trim();
-                    if (modsListFile.StartsWith('"') && modsListFile.EndsWith('"'))
+                    modsListFile = modsListFile.Trim().Trim('"').Trim('\'');
+                    string modsListRaw = await ReadModsListContentAsync(modsListFile);
+                    if (string.IsNullOrEmpty(modsListRaw))
+                        return null;
+
+                    var lines = modsListRaw.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var line in lines)
                     {
-                        modsListFile = modsListFile.Substring(1, modsListFile.Length - 2);
-                    }
-                    else if (modsListFile.StartsWith('\'') && modsListFile.EndsWith('\''))
-                    {
-                        modsListFile = modsListFile.Substring(1, modsListFile.Length - 2);
-                    }
-
-                    string modsListRaw = string.Empty;
-                    if (modsListFile.StartsWith("http"))
-                    {
-                        // Download the mods list from a URL with progress display.
-                        AnsiConsole.MarkupLine("Downloading mods list from [yellow]URL[/]...");
-                        AnsiConsole.Progress()
-                            .Columns(
-                                new TaskDescriptionColumn(),
-                                new ProgressBarColumn(),
-                                new DownloadedColumn(),
-                                new RemainingTimeColumn()
-                            )
-                            .Start(ctx =>
-                            {
-                                using (var httpClient = new HttpClient())
-                                {
-                                    var response = httpClient.GetAsync(modsListFile).Result;
-                                    var totalBytes = response.Content.Headers.ContentLength ?? 0;
-
-                                    var task = ctx.AddTask("Downloading mods list...", maxValue: totalBytes);
-
-                                    using (var stream = response.Content.ReadAsStreamAsync().Result)
-                                    using (var ms = new MemoryStream())
-                                    {
-                                        var buffer = new byte[8192];
-                                        int bytesRead;
-                                        long totalBytesRead = 0;
-
-                                        while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
-                                        {
-                                            ms.Write(buffer, 0, bytesRead);
-                                            totalBytesRead += bytesRead;
-                                            task.Increment(bytesRead);
-                                        }
-
-                                        modsListRaw = Encoding.UTF8.GetString(ms.ToArray());
-                                    }
-                                }
-                            });
-                    }
-                    else
-                    {
-                        // Read the mods list from a local file.
-                        if (!File.Exists(modsListFile))
-                        {
-                            AnsiConsole.MarkupLine("[red]File not found. Exiting.[/]");
-                            return;
-                        }
-
-                        try
-                        {
-                            AnsiConsole.MarkupLine("Reading mods list from [yellow]file[/]...");
-                            modsListRaw = File.ReadAllText(modsListFile);
-                        }
-                        catch (Exception ex)
-                        {
-                            AnsiConsole.MarkupLineInterpolated($"[red]Error reading file: {ex.Message}[/]");
-                            return;
-                        }
-                    }
-
-                    // Parse the mods list into a dictionary (filename -> download URL).
-                    Dictionary<string, string> modsList = new Dictionary<string, string>();
-                    string[] lines = modsListRaw.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
-                    foreach (string line in lines)
-                    {
-                        if (string.IsNullOrWhiteSpace(line)) continue;
-                        if (line.TrimStart().StartsWith('#')) continue;
-
-                        string[] parts = line.Split('|', StringSplitOptions.TrimEntries);
+                        if (string.IsNullOrWhiteSpace(line) || line.TrimStart().StartsWith('#')) continue;
+                        var parts = line.Split('|', StringSplitOptions.TrimEntries);
                         if (parts.Length == 2)
-                            modsList.TryAdd(parts[0], parts[1]);
+                            mods.Add(new ModEntry { FileName = parts[0], Url = parts[1] });
                     }
 
-                    AnsiConsole.MarkupLineInterpolated($"[yellow]Found {modsList.Count} mod(s) in the list.[/]");
-                    if (modsList.Count == 0)
+                    AnsiConsole.MarkupLineInterpolated($"[yellow]Found {mods.Count} mod(s) in the list.[/]");
+                    if (mods.Count == 0)
                     {
                         AnsiConsole.MarkupLine("[red]No mods to download. Check the file format and content.[/]");
-                        return;
+                        return null;
                     }
 
-                    AnsiConsole.MarkupLine("");
-                    string modsDir = "./modsTmp";
+                    var downloader = new DownloadService();
+                    string modsDir = "./minecraft/mods";
                     Directory.CreateDirectory(modsDir);
 
-                    // Download all mods in parallel with progress reporting.
                     await AnsiConsole.Progress()
                         .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new DownloadedColumn(), new RemainingTimeColumn())
                         .StartAsync(async ctx =>
                         {
-                            var tasks = modsList.Select(async kvp =>
+                            var tasks = mods.Select(async mod =>
                             {
-                                var fileName = kvp.Key;
-                                var fileUrl = kvp.Value;
-                                var filePath = Path.Combine(modsDir, fileName);
-                                var task = ctx.AddTask($"[green]Downloading[/] {fileName}");
-
+                                var task = ctx.AddTask($"[green]Downloading[/] {mod.FileName}");
                                 try
                                 {
-                                    await DownloadFileWithProgressAsync(fileUrl, filePath, task);
+                                    await downloader.DownloadFileWithProgressAsync(mod.Url, Path.Combine(modsDir, mod.FileName), task);
                                 }
                                 catch (Exception ex)
                                 {
-                                    if (File.Exists(filePath))
-                                        File.Delete(filePath);
-                                    AnsiConsole.MarkupLineInterpolated($"[red]Error downloading {fileName}: {ex.Message}[/]");
+                                    AnsiConsole.MarkupLineInterpolated($"[red]Error downloading {mod.FileName}: {ex.Message}[/]");
                                 }
                                 finally
                                 {
                                     task.StopTask();
                                 }
                             });
-
                             await Task.WhenAll(tasks);
                         });
-
-                    AnsiConsole.MarkupLine("[green]All mods downloaded successfully![/]");
-                    AnsiConsole.MarkupLine("");
                 }
                 else
                 {
-                    // User didn't provide a mods list – just skip download, but continue.
                     AnsiConsole.MarkupLine("[yellow]No mods list provided – skipping mod download.[/]");
                 }
             }
@@ -244,88 +190,133 @@ namespace ScopeCLI
                 AnsiConsole.MarkupLine("[yellow]Vanilla selected – no mods will be downloaded.[/]");
             }
 
-            // --- Determine the final game version with loader suffix ---
-            string finalGameVersion;
+            string baseVersion = AnsiConsole.Ask<string>($"Enter game version [gray]({modLoader})[/]:");
+            string finalGameVersion = modLoader.Equals("Vanilla", StringComparison.OrdinalIgnoreCase)
+                ? baseVersion
+                : $"{baseVersion}-{modLoader.ToLower()}";
 
-            if (string.IsNullOrEmpty(gameVersion))
+            string serverAddress = AnsiConsole.Ask<string>("Enter server address (address:port) (optional):", "");
+            string profileName = AnsiConsole.Ask<string>("Enter profile name:");
+
+            bool saveProfile = AnsiConsole.Confirm("Save profile?");
+            if (!saveProfile)
             {
-                // No pre-set version – ask user.
-                string baseVersion = AnsiConsole.Ask<string>($"Enter game version [gray]({modLoader})[/]:");
-                if (modLoader.Equals("Vanilla", StringComparison.OrdinalIgnoreCase))
-                {
-                    finalGameVersion = baseVersion;
-                }
-                else
-                {
-                    finalGameVersion = $"{baseVersion}-{modLoader.ToLower()}";
-                }
+                AnsiConsole.MarkupLine("[yellow]Profile not saved. Returning to selection...[/]");
+                return null;
+            }
+
+            string shortId;
+            do
+            {
+                shortId = Guid.NewGuid().ToString("N").Substring(0, 6);
+            } while (File.Exists(Path.Combine("profiles", $"{shortId}.upf")));
+
+            bool enableIsolation = AnsiConsole.Confirm("Enable profile isolation? (config and mods will be saved/restored automatically)", true);
+
+            var profile = new Profile
+            {
+                ShortId = shortId,
+                Name = profileName,
+                Nickname = nickname,
+                GameVersion = finalGameVersion,
+                ModLoader = modLoader,
+                ServerAddress = serverAddress,
+                Mods = mods,
+                IsIsolationEnabled = enableIsolation
+            };
+
+            string json = JsonConvert.SerializeObject(profile, Formatting.Indented);
+            File.WriteAllText(Path.Combine("profiles", $"{shortId}.upf"), json);
+            AnsiConsole.MarkupLine($"[green]Profile saved as {shortId}.upf[/]");
+
+            return profile;
+        }
+
+        private static async Task<string> ReadModsListContentAsync(string pathOrUrl)
+        {
+            if (pathOrUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                AnsiConsole.MarkupLine("Downloading mods list from [yellow]URL[/]...");
+                using var httpClient = new HttpClient();
+                var response = await httpClient.GetAsync(pathOrUrl);
+                response.EnsureSuccessStatusCode();
+                return await response.Content.ReadAsStringAsync();
             }
             else
             {
-                // Version already known (from relaunch arguments or previous input).
-                if (modLoader.Equals("Vanilla", StringComparison.OrdinalIgnoreCase))
+                if (!File.Exists(pathOrUrl))
                 {
-                    finalGameVersion = gameVersion;
+                    AnsiConsole.MarkupLine("[red]File not found.[/]");
+                    return null;
                 }
-                else
-                {
-                    string suffix = "-" + modLoader.ToLower();
-                    // Avoid adding suffix twice if it's already there.
-                    finalGameVersion = gameVersion.EndsWith(suffix) ? gameVersion : gameVersion + suffix;
-                }
-
-                AnsiConsole.MarkupLineInterpolated($"Selected game version: [green]{finalGameVersion}[/]");
+                return await File.ReadAllTextAsync(pathOrUrl);
             }
+        }
 
-            // Display system RAM information.
+        private static void ShowMemoryInfo()
+        {
+            long freeRam = NativeHelpers.GetAvailableRam();
+            long totalRam = NativeHelpers.GetDeviceRam();
             AnsiConsole.MarkupLine("[gray]================================================[/]");
-            long freeRam = (long)NativeHelpers.GetAvailableRam();
-            long totalRam = (long)NativeHelpers.GetDeviceRam();
             AnsiConsole.MarkupLineInterpolated($"Free RAM count: [yellow]{freeRam.Bytes()}/{totalRam.Bytes()}[/]");
-
-            // Check if free RAM is less than 20% of total RAM and show a warning.
             if (totalRam > 0)
             {
                 double freePercent = (double)freeRam / totalRam * 100;
                 if (freePercent < 20)
-                {
                     AnsiConsole.MarkupLine("[red]Warning:[/] Free RAM is below 20% of total system memory. Consider enabling global optimization for better performance.");
-                }
+            }
+            AnsiConsole.MarkupLine("[gray]================================================[/]");
+        }
+
+        private static void RequestAdminRelaunch(Profile profile)
+        {
+            var settings = new AdminLaunchSettings
+            {
+                accountNickName = profile.Nickname,
+                gameVersion = profile.GameVersion,
+                modLoader = profile.ModLoader
+            };
+            string json = JsonConvert.SerializeObject(settings);
+            NativeHelpers.RequestAdministrator(Convert.ToBase64String(Encoding.UTF8.GetBytes(json)));
+        }
+
+        private static async Task HandleAdminRelaunch(string base64)
+        {
+            string json = Encoding.UTF8.GetString(Convert.FromBase64String(base64));
+            var settings = JsonConvert.DeserializeObject<AdminLaunchSettings>(json);
+
+            AnsiConsole.MarkupLine("[gray]================================================[/]");
+            long freeRam = NativeHelpers.GetAvailableRam();
+            long totalRam = NativeHelpers.GetDeviceRam();
+            AnsiConsole.MarkupLineInterpolated($"Free RAM count: [yellow]{freeRam.Bytes()}/{totalRam.Bytes()}[/]");
+            if (totalRam > 0)
+            {
+                double freePercent = (double)freeRam / totalRam * 100;
+                if (freePercent < 20)
+                    AnsiConsole.MarkupLine("[red]Warning:[/] Free RAM is below 20% of total system memory. Consider enabling global optimization for better performance.");
             }
             AnsiConsole.MarkupLine("[gray]================================================[/]");
 
-            bool optimizeRamUsage = false;
             if (!NativeHelpers.IsAdministrator())
             {
-                optimizeRamUsage = AnsiConsole.Confirm("Enable [red]global[/] optimization? [gray](require admin and restart)[/]");
-            }
-            else
-            {
-                AnsiConsole.MarkupLine("[red]Global[/] optimization is enabled!");
-                AnsiConsole.MarkupLine("[green]You need to restart your computer[/] [underline]after the game[/][green] to get everything back![/]");
-            }
-
-            // If optimization is requested but not running as admin, relaunch with admin rights.
-            if (optimizeRamUsage && !NativeHelpers.IsAdministrator())
-            {
-                GlobalOptimizer.AdminLaunchSettings relaunchSettings = new GlobalOptimizer.AdminLaunchSettings
-                {
-                    accountNickName = nickname,
-                    gameVersion = finalGameVersion,   // use the fully qualified version
-                    modLoader = modLoader
-                };
-                string jsonRelaunch = JsonConvert.SerializeObject(relaunchSettings);
-                NativeHelpers.RequestAdministrator(Convert.ToBase64String(Encoding.UTF8.GetBytes(jsonRelaunch)));
-
+                AnsiConsole.MarkupLine("[red]Administrator privileges required but not present. Exiting.[/]");
                 return;
             }
 
-            // Ask whether to launch the game.
-            bool launchGame = AnsiConsole.Confirm("Launch the game?");
+            GlobalOptimizer opt = new GlobalOptimizer();
+            opt.Optimize();
 
+            bool connectToServer = AnsiConsole.Confirm("Connect to server?");
+            string serverAddress = "";
+            if (connectToServer)
+            {
+                serverAddress = AnsiConsole.Ask<string>("Enter server address (address:port):", serverAddress);
+            }
+
+            bool launchGame = AnsiConsole.Confirm("Launch the game?");
             if (launchGame)
             {
-                await LauncherLogic.Run(nickname, finalGameVersion);
+                await LauncherLogic.Run(settings.accountNickName, settings.gameVersion);
             }
         }
     }
