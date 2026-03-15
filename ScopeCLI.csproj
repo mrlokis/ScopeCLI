@@ -9,7 +9,22 @@
     <PublishAot>False</PublishAot>
     <Version>0.00.1-dev</Version>
     <Title>ScopeCLI</Title>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Resources\proclist\Social.psl" />
+    <None Remove="Resources\proclist\System.psl" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="icon.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\proclist\Social.psl" />
+    <EmbeddedResource Include="Resources\proclist\System.psl" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="CmlLib.Core" Version="4.0.6" />

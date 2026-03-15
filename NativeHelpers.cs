@@ -2,11 +2,11 @@
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 
-namespace ScopeLauncher
+namespace ScopeCLI
 {
     internal class NativeHelpers
     {
-        internal static ulong GetDeviceRam()
+        internal static long GetDeviceRam()
         {
             ulong installedMemory = 0;
             MEMORYSTATUSEX memStatus = new MEMORYSTATUSEX();
@@ -16,10 +16,10 @@ namespace ScopeLauncher
                 installedMemory = memStatus.ullTotalPhys;
             }
 
-            return installedMemory;
+            return (long)installedMemory;
         }
 
-        internal static ulong GetAvailableRam()
+        internal static long GetAvailableRam()
         {
             ulong availableMemory = 0;
             MEMORYSTATUSEX memStatus = new MEMORYSTATUSEX();
@@ -29,7 +29,7 @@ namespace ScopeLauncher
                 availableMemory = memStatus.ullAvailPhys;
             }
 
-            return availableMemory;
+            return (long)availableMemory;
         }
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
@@ -64,7 +64,7 @@ namespace ScopeLauncher
 
         internal static void RequestAdministrator(string launchArgs = null)
         {
-            if (IsAdministrator() == false) 
+            if (IsAdministrator() == false)
             {
                 System.AppDomain.CurrentDomain.SetPrincipalPolicy(PrincipalPolicy.WindowsPrincipal);
                 ProcessStartInfo startInfo = new ProcessStartInfo(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName, launchArgs);

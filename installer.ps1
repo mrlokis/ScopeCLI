@@ -29,7 +29,7 @@
     shortcut named "ScopeLauncher.lnk" is created on the desktop.
 
 .LINK
-    https://github.com/mrlokis/mc-launcher-test/releases/download/0.00.1/ScopeLauncher.exe
+    https://github.com/mrlokis/ScopeCLI
 #>
 
 Add-Type -AssemblyName System.Windows.Forms
