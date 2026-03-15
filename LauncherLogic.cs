@@ -190,7 +190,6 @@ namespace ScopeCLI
                     }
                 });
 
-            // 6. Запуск игры
             var process = await launcher.BuildProcessAsync(versionName, new MLaunchOption
             {
                 Session = MSession.CreateOfflineSession(nickname),
