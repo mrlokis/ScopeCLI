@@ -10,7 +10,7 @@ namespace ScopeCLI
 {
     internal class LauncherLogic
     {
-        internal static async Task Run(string nickname, string version)
+        internal static async Task Run(string nickname, string version, int maxRamMB)
         {
             var path = new MinecraftPath("./minecraft");
             var launcher = new MinecraftLauncher(path);
@@ -193,7 +193,7 @@ namespace ScopeCLI
             var process = await launcher.BuildProcessAsync(versionName, new MLaunchOption
             {
                 Session = MSession.CreateOfflineSession(nickname),
-                MaximumRamMb = 2048
+                MaximumRamMb = maxRamMB
             });
 
             process.Start();

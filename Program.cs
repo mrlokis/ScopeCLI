@@ -64,7 +64,7 @@ namespace ScopeCLI
                 bool launchGame = AnsiConsole.Confirm("Launch the game?");
                 if (launchGame)
                 {
-                    await LauncherLogic.Run(profile.Nickname, profile.GameVersion);
+                    await LauncherLogic.Run(profile.Nickname, profile.GameVersion, (int)(NativeHelpers.GetAvailableRam() / (1024 * 1024)));
                     return;
                 }
 
@@ -183,6 +183,11 @@ namespace ScopeCLI
                 else
                 {
                     AnsiConsole.MarkupLine("[yellow]No mods list provided – skipping mod download.[/]");
+                    string modsFolder = Path.Combine("minecraft", "mods");
+                    if (Directory.Exists(modsFolder))
+                    {
+                        Directory.Delete(modsFolder, true);
+                    }
                 }
             }
             else
@@ -316,7 +321,7 @@ namespace ScopeCLI
             bool launchGame = AnsiConsole.Confirm("Launch the game?");
             if (launchGame)
             {
-                await LauncherLogic.Run(settings.accountNickName, settings.gameVersion);
+                await LauncherLogic.Run(settings.accountNickName, settings.gameVersion, (int)(freeRam / (1024 * 1024)));
             }
         }
     }
