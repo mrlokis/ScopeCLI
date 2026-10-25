@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="ScopeCLI.csproj" />
+  <Project Path="ScopeCLI.Tests/ScopeCLI.Tests.csproj" />
+</Solution>

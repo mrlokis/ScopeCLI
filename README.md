@@ -7,13 +7,15 @@ No heavy GUIs, no wasted resources – just a clean, fast terminal interface wit
 
 ## ✨ Features
 
-- ✅ **Interactive CLI** – choose nickname, mod loader, game version, and mod list right in the terminal.
-- ✅ **Mod list support** – download multiple mods at once from a simple text file (local or remote).
-- ✅ **Parallel downloads** – all mods are downloaded concurrently with live progress bars.
-- ✅ **Global RAM optimization** – when run as administrator, the launcher can free up memory for smoother gameplay.
-- ✅ **Smart relaunch** – if you enable optimization without admin rights, the launcher restarts itself with elevated privileges, preserving all your settings.
-- ✅ **System memory monitoring** – shows free RAM and warns if it’s too low before launching.
-- 🚧 **Automatic mod loader installation** – currently you need to provide the correct game version yourself (e.g. `1.20.1-forge`). Full mod loader setup is planned.
+- ✅ **Interactive CLI & TUI** – choose nickname, mod loader, game version, and mod list right in the terminal.
+- ✅ **Headless / Automation CLI Mode** – launch profiles, list configurations, or run optimizations directly via command-line arguments.
+- ✅ **Automatic Mod Loader Installation** – full support for **Vanilla**, **Forge**, **NeoForge**, and **Fabric**.
+- ✅ **Mod List Support** – download multiple mods at once from a simple text file (local or remote URL).
+- ✅ **Parallel Downloads with Fixed Slots** – downloads are throttled to prevent socket exhaustion and status bar jumping.
+- ✅ **Profile Isolation & Persistence** – configs and mods can be isolated per-profile, preventing mod conflicts.
+- ✅ **Safe & Elevated RAM Optimization** – working set trimming frees memory without closing apps; elevated mode can optimize background processes.
+- ✅ **Smart Relaunch** – preserves your active profile settings when elevating to administrator privileges.
+- ✅ **System Memory Monitoring** – visual indicators for free RAM and warnings before launching.
 
 ---
 
@@ -32,17 +34,47 @@ powershell.exe -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.Web
 
 ## 🚀 Getting Started
 
-After installation, launch ScopeCLI from the Start Menu or Desktop shortcut.  
+### 1. Interactive Mode (TUI)
+Simply run `ScopeCLI` without arguments:
+```powershell
+ScopeCLI
+```
 You will be guided through an interactive setup:
+1. **Choose Profile** – select an existing profile or create a new one.
+2. **Select Mod Loader** – `Vanilla`, `Forge`, `NeoForge`, or `Fabric`.
+3. **Provide Mod List** – a URL or local file path (drag & drop works!).
+4. **Enter Game Version** – e.g. `1.20.1` (the launcher handles loader installation automatically).
+5. **Memory Optimization** – choose whether to apply memory-saving tweaks.
+6. **Launch Game** – game starts with your chosen settings and allocated RAM.
 
-1. **Enter your nickname** – used for offline mode.
-2. **Select a mod loader** – `Vanilla`, `Forge`, `NeoForge`, or `Fabric`.
-3. **Provide a mod list** – a URL or a local file path (drag & drop works!).
-4. **Enter the game version** – e.g. `1.20.1` (for modded loaders you may need to include the loader, like `1.20.1-forge`).
-5. **Choose global optimization** – if enabled, the launcher will restart as administrator and apply memory‑saving tweaks.
-6. **Confirm launch** – the game starts with your chosen settings.
+### 2. Command-Line Arguments (Headless Mode)
+You can automate or script launches with CLI commands:
 
-### 🔧 Mod list format
+```powershell
+# Launch an existing profile
+ScopeCLI launch --profile "MyProfile"
+
+# Launch with server auto-connect and specific RAM
+ScopeCLI launch --profile "MyProfile" --server "mc.example.com:25565" --ram 4096 --optimize
+
+# List all profiles
+ScopeCLI profiles list
+
+# View or delete a profile
+ScopeCLI profiles show "MyProfile"
+ScopeCLI profiles delete "MyProfile"
+
+# Run standalone memory optimization
+ScopeCLI optimize
+ScopeCLI optimize --aggressive
+
+# View help
+ScopeCLI --help
+```
+
+---
+
+## 🔧 Mod List Format
 
 The mod list must be a plain text file with one mod per line, in the format:
 
@@ -58,51 +90,26 @@ You can also provide a **URL** pointing to such a file – the launcher will dow
 
 ---
 
-## ⚙ Global RAM Optimization (WIP)
+## ⚙ Global RAM Optimization
 
-When you enable global optimization, the launcher attempts to free up as much RAM as possible before starting Minecraft:
+When you enable optimization, the launcher frees up RAM before starting Minecraft:
 
-- It clears the working set of essential system processes.
-- It forces a garbage collection and flushes system caches.
-- These changes are **temporary** – after you finish playing, a restart will restore everything to normal.
-
-If you are **not** running as administrator, the launcher will ask for permission to restart itself with admin rights, preserving your nickname, game version, and mod loader choice.
+- **Safe Mode:** trims the working set of running processes and triggers garbage collection. This safely recovers memory without closing any user applications.
+- **Aggressive (Admin) Mode:** terminates non-whitelisted high-memory processes using a safety whitelist (`System.psl` and `Social.psl`).
+- When elevated privileges are needed, the launcher restarts itself as Administrator while preserving your active profile settings.
 
 ---
 
-## 🧱 Current Status & Roadmap
+## 🧱 Current Status & Architecture
 
-### ✅ Done
-- [x] Interactive terminal UI (TUI)
-- [x] Parallel mod downloading with progress bars
-- [x] Support for local and remote mod lists (URL/File)
-- [x] Auto‑restart with admin rights for memory optimization
-
-### 🚧 In Progress / Near Future
-- [ ] **Automatic mod loader installation** (Fabric/Forge/NeoForge/Quilt) with correct version detection.
-- [ ] **Global RAM optimization:** Advanced memory freeing (Admin mode).
-- [ ] **Config save/load:** Persistent profiles for different servers or playstyles.
-- [ ] **Game assembly isolation:** Separate folders for each profile (prevents mod conflicts).
-- [ ] **ModList (.modl) markup language:** Instead of plain text, you can write scripts to install modifications from various sources.
-
-### 🔮 Planned / Future Ideas
-- [ ] **Integration with Modrinth & CurseForge APIs:** Install mods directly by name (`scopecli add sodium`).
-- [ ] **Headless (Batch) mode:** Run launcher with command-line arguments for automation.
-- [ ] **Localization** (i18n) support.
-- [ ] **Self-update mechanism** for the launcher itself.
-- [ ] **Microsoft auth** for ingame sessions.
----
-
-## 🤝 Contributing
-
-Bug reports, feature ideas, and pull requests are always welcome!  
-Feel free to open an [issue](https://github.com/mrlokis/ScopeCLI/issues) or fork the repository.
-
----
-
-## ⚠️ Known issues
-- #1 During AoT compilation, the process of transferring settings to the administrator mode does not work. The whole process starts all over again.
-- #2 When downloading modifications, the status bars move.
+### Architecture
+- **Dependency Inversion & Service Abstractions:**
+  - `IProfileService` – Profile CRUD, persistence, state archiving/restoring.
+  - `ILauncherService` – Minecraft launch and Forge/NeoForge/Fabric automated setup.
+  - `IModSynchronizer` – Mod download queue with concurrency throttling and orphan cleanup.
+  - `ISystemOptimizer` – Safe memory working set trimming and process management.
+  - `IArchiveService` – Zip-Slip protected configuration and mod archiving.
+  - `IConsoleUi` – Centralized Spectre.Console rendering and non-interactive shell fallback.
 
 ---
 

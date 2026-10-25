@@ -1,39 +1,53 @@
-﻿using System.Diagnostics;
+using System;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Security.Principal;
+using Spectre.Console;
 
 namespace ScopeCLI
 {
-    internal class NativeHelpers
+    internal static class NativeHelpers
     {
         internal static long GetDeviceRam()
         {
-            ulong installedMemory = 0;
-            MEMORYSTATUSEX memStatus = new MEMORYSTATUSEX();
-
-            if (GlobalMemoryStatusEx(memStatus))
+            if (!OperatingSystem.IsWindows())
             {
-                installedMemory = memStatus.ullTotalPhys;
+                return GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
             }
 
-            return (long)installedMemory;
+            var memStatus = new MEMORYSTATUSEX();
+            memStatus.dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>();
+
+            if (GlobalMemoryStatusEx(ref memStatus))
+            {
+                return (long)memStatus.ullTotalPhys;
+            }
+
+            return 0;
         }
 
         internal static long GetAvailableRam()
         {
-            ulong availableMemory = 0;
-            MEMORYSTATUSEX memStatus = new MEMORYSTATUSEX();
-
-            if (GlobalMemoryStatusEx(memStatus))
+            if (!OperatingSystem.IsWindows())
             {
-                availableMemory = memStatus.ullAvailPhys;
+                return GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
             }
 
-            return (long)availableMemory;
+            var memStatus = new MEMORYSTATUSEX();
+            memStatus.dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>();
+
+            if (GlobalMemoryStatusEx(ref memStatus))
+            {
+                return (long)memStatus.ullAvailPhys;
+            }
+
+            return 0;
         }
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-        private class MEMORYSTATUSEX
+        private struct MEMORYSTATUSEX
         {
             public uint dwLength;
             public uint dwMemoryLoad;
@@ -44,35 +58,86 @@ namespace ScopeCLI
             public ulong ullTotalVirtual;
             public ulong ullAvailVirtual;
             public ulong ullAvailExtendedVirtual;
-            public MEMORYSTATUSEX()
-            {
-                this.dwLength = (uint)Marshal.SizeOf(typeof(NativeHelpers.MEMORYSTATUSEX));
-            }
         }
 
         [return: MarshalAs(UnmanagedType.Bool)]
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        static extern bool GlobalMemoryStatusEx([In, Out] MEMORYSTATUSEX lpBuffer);
+        private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
+
+        [DllImport("psapi.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool EmptyWorkingSet(IntPtr hProcess);
 
         internal static bool IsAdministrator()
         {
-            var identity = WindowsIdentity.GetCurrent();
-            var principal = new WindowsPrincipal(identity);
+            if (!OperatingSystem.IsWindows())
+            {
+                return false;
+            }
 
+            return CheckWindowsAdministrator();
+        }
+
+        [SupportedOSPlatform("windows")]
+        private static bool CheckWindowsAdministrator()
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            var principal = new WindowsPrincipal(identity);
             return principal.IsInRole(WindowsBuiltInRole.Administrator);
         }
 
-        internal static void RequestAdministrator(string launchArgs = null)
+        internal static bool RequestAdministrator(string? launchArgs = null)
         {
-            if (IsAdministrator() == false)
+            if (IsAdministrator())
             {
-                System.AppDomain.CurrentDomain.SetPrincipalPolicy(PrincipalPolicy.WindowsPrincipal);
-                ProcessStartInfo startInfo = new ProcessStartInfo(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName, launchArgs);
-                startInfo.UseShellExecute = true;
-                startInfo.Verb = "runas";
-                System.Diagnostics.Process.Start(startInfo);
-                Environment.Exit(0);
+                return true;
             }
+
+            if (!OperatingSystem.IsWindows())
+            {
+                AnsiConsole.MarkupLine("[yellow]Elevation is only supported on Windows.[/]");
+                return false;
+            }
+
+            try
+            {
+                string? exePath = Environment.ProcessPath;
+                if (string.IsNullOrEmpty(exePath))
+                {
+                    using var proc = Process.GetCurrentProcess();
+                    exePath = proc.MainModule?.FileName;
+                }
+
+                if (string.IsNullOrEmpty(exePath))
+                {
+                    AnsiConsole.MarkupLine("[red]Unable to determine application executable path for elevation.[/]");
+                    return false;
+                }
+
+                var startInfo = new ProcessStartInfo(exePath, launchArgs ?? string.Empty)
+                {
+                    UseShellExecute = true,
+                    Verb = "runas",
+                    WorkingDirectory = Environment.CurrentDirectory
+                };
+
+                var elevatedProcess = Process.Start(startInfo);
+                if (elevatedProcess != null)
+                {
+                    Environment.Exit(0);
+                    return true;
+                }
+            }
+            catch (Win32Exception)
+            {
+                AnsiConsole.MarkupLine("[yellow]Administrator privileges request was cancelled by user.[/]");
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[red]Failed to launch with administrator privileges:[/] {ex.Message.EscapeMarkup()}");
+            }
+
+            return false;
         }
     }
 }
