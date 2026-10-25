@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -10,6 +10,7 @@
     <Version>0.00.1-dev</Version>
     <Title>ScopeCLI</Title>
     <ApplicationIcon>icon.ico</ApplicationIcon>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ScopeCLI.Tests\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

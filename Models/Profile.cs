@@ -1,32 +1,59 @@
-﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
+using Newtonsoft.Json;
 
 namespace ScopeCLI.Models
 {
     public class Profile
     {
         [JsonProperty("shortId")]
-        public string ShortId { get; set; }
+        [JsonPropertyName("shortId")]
+        public string ShortId { get; set; } = string.Empty;
 
         [JsonProperty("name")]
-        public string Name { get; set; }
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = string.Empty;
 
         [JsonProperty("nickname")]
-        public string Nickname { get; set; }
+        [JsonPropertyName("nickname")]
+        public string Nickname { get; set; } = string.Empty;
 
         [JsonProperty("gameVersion")]
-        public string GameVersion { get; set; }
+        [JsonPropertyName("gameVersion")]
+        public string GameVersion { get; set; } = string.Empty;
 
         [JsonProperty("modLoader")]
-        public string ModLoader { get; set; }
+        [JsonPropertyName("modLoader")]
+        public string ModLoader { get; set; } = "Vanilla";
 
         [JsonProperty("serverAddress")]
-        public string ServerAddress { get; set; }
+        [JsonPropertyName("serverAddress")]
+        public string? ServerAddress { get; set; }
 
         [JsonProperty("mods")]
-        public List<ModEntry> Mods { get; set; }
+        [JsonPropertyName("mods")]
+        public List<ModEntry> Mods { get; set; } = new();
 
         [JsonProperty("isIsolationEnabled")]
+        [JsonPropertyName("isIsolationEnabled")]
         public bool IsIsolationEnabled { get; set; }
+
+        [JsonProperty("maxRamMb")]
+        [JsonPropertyName("maxRamMb")]
+        public int? MaxRamMb { get; set; }
+
+        [JsonProperty("javaPath")]
+        [JsonPropertyName("javaPath")]
+        public string? JavaPath { get; set; }
+
+        public string GetBaseGameVersion()
+        {
+            if (string.IsNullOrEmpty(GameVersion))
+                return string.Empty;
+
+            int dashIndex = GameVersion.IndexOf('-');
+            return dashIndex > 0 ? GameVersion.Substring(0, dashIndex) : GameVersion;
+        }
     }
 }

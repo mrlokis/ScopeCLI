@@ -1,7 +1,26 @@
-﻿namespace ScopeCLI.Models;
+using System.Text.Json.Serialization;
+using Newtonsoft.Json;
 
-public class ModEntry
+namespace ScopeCLI.Models
 {
-    public string FileName { get; set; }
-    public string Url { get; set; }
+    public class ModEntry
+    {
+        [JsonProperty("fileName")]
+        [JsonPropertyName("fileName")]
+        public string FileName { get; set; } = string.Empty;
+
+        [JsonProperty("url")]
+        [JsonPropertyName("url")]
+        public string Url { get; set; } = string.Empty;
+
+        public ModEntry() { }
+
+        public ModEntry(string fileName, string url)
+        {
+            FileName = fileName;
+            Url = url;
+        }
+
+        public override string ToString() => $"{FileName} ({Url})";
+    }
 }

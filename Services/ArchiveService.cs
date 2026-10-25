@@ -1,127 +1,207 @@
-﻿using System.IO.Compression;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Security;
+using System.Threading;
+using System.Threading.Tasks;
+using ScopeCLI.Common;
+using ScopeCLI.Services.Interfaces;
 using Spectre.Console;
 
 namespace ScopeCLI.Services
 {
-    public class ArchiveService
+    public class ArchiveService : IArchiveService
     {
-        public async Task CreateConfigArchiveAsync(string profileId, string sourceMinecraftDir, ProgressTask task)
+        public Task CreateConfigArchiveAsync(string profileId, string sourceMinecraftDir, ProgressTask? task = null, CancellationToken cancellationToken = default)
         {
-            string profilesDataDir = Path.Combine("profiles_data", profileId);
-            Directory.CreateDirectory(profilesDataDir);
-            string archivePath = Path.Combine(profilesDataDir, "config.zip");
-
-            var filesToArchive = new List<string>();
-
-            string optionsTxt = Path.Combine(sourceMinecraftDir, "options.txt");
-            if (File.Exists(optionsTxt))
-                filesToArchive.Add(optionsTxt);
-
-            string configDir = Path.Combine(sourceMinecraftDir, "config");
-            if (Directory.Exists(configDir))
-                filesToArchive.AddRange(Directory.GetFiles(configDir, "*", SearchOption.AllDirectories));
-
-            task.MaxValue(filesToArchive.Count);
-
-            if (filesToArchive.Count == 0)
+            return Task.Run(() =>
             {
-                task.Value = 0;
-                return;
-            }
+                string profilesDataDir = AppPaths.GetProfileDataDir(profileId);
+                Directory.CreateDirectory(profilesDataDir);
+                string archivePath = AppPaths.GetProfileConfigArchive(profileId);
 
-            using (var zipStream = new FileStream(archivePath, FileMode.Create))
-            using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create))
-            {
-                foreach (var filePath in filesToArchive)
+                var filesToArchive = new List<string>();
+
+                string optionsTxt = Path.Combine(sourceMinecraftDir, "options.txt");
+                if (File.Exists(optionsTxt))
+                    filesToArchive.Add(optionsTxt);
+
+                string configDir = Path.Combine(sourceMinecraftDir, "config");
+                if (Directory.Exists(configDir))
+                    filesToArchive.AddRange(Directory.GetFiles(configDir, "*", SearchOption.AllDirectories));
+
+                string defaultConfigsDir = Path.Combine(sourceMinecraftDir, "defaultconfigs");
+                if (Directory.Exists(defaultConfigsDir))
+                    filesToArchive.AddRange(Directory.GetFiles(defaultConfigsDir, "*", SearchOption.AllDirectories));
+
+                if (task != null)
                 {
-                    string entryName = Path.GetRelativePath(sourceMinecraftDir, filePath);
-                    archive.CreateEntryFromFile(filePath, entryName);
-                    task.Increment(1);
+                    task.MaxValue = Math.Max(1, filesToArchive.Count);
                 }
-            }
+
+                if (filesToArchive.Count == 0)
+                {
+                    if (task != null) task.Value = task.MaxValue;
+                    return;
+                }
+
+                string tempArchive = archivePath + ".tmp";
+                if (File.Exists(tempArchive))
+                    File.Delete(tempArchive);
+
+                using (var zipStream = new FileStream(tempArchive, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create))
+                {
+                    foreach (var filePath in filesToArchive)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        string entryName = Path.GetRelativePath(sourceMinecraftDir, filePath);
+                        archive.CreateEntryFromFile(filePath, entryName, CompressionLevel.Optimal);
+                        task?.Increment(1);
+                    }
+                }
+
+                if (File.Exists(archivePath))
+                    File.Delete(archivePath);
+
+                File.Move(tempArchive, archivePath);
+            }, cancellationToken);
         }
 
-        public async Task ExtractConfigArchiveAsync(string profileId, string targetMinecraftDir, ProgressTask task)
+        public Task ExtractConfigArchiveAsync(string profileId, string targetMinecraftDir, ProgressTask? task = null, CancellationToken cancellationToken = default)
         {
-            string archivePath = Path.Combine("profiles_data", profileId, "config.zip");
-            if (!File.Exists(archivePath))
+            return Task.Run(() =>
             {
-                task.MaxValue(0);
-                return;
-            }
-
-            using (var zipStream = new FileStream(archivePath, FileMode.Open, FileAccess.Read))
-            using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Read))
-            {
-                var entries = archive.Entries;
-                task.MaxValue(entries.Count);
-
-                foreach (var entry in entries)
+                string archivePath = AppPaths.GetProfileConfigArchive(profileId);
+                if (!File.Exists(archivePath))
                 {
-                    string destinationPath = Path.Combine(targetMinecraftDir, entry.FullName);
-                    Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
-                    entry.ExtractToFile(destinationPath, overwrite: true);
-                    task.Increment(1);
+                    if (task != null)
+                    {
+                        task.MaxValue = 1;
+                        task.Value = 1;
+                    }
+                    return;
                 }
-            }
+
+                SafeExtractZip(archivePath, targetMinecraftDir, task, cancellationToken);
+            }, cancellationToken);
         }
 
-        public async Task CreateModsArchiveAsync(string profileId, string sourceMinecraftDir, ProgressTask task)
+        public Task CreateModsArchiveAsync(string profileId, string sourceMinecraftDir, ProgressTask? task = null, CancellationToken cancellationToken = default)
         {
-            string profilesDataDir = Path.Combine("profiles_data", profileId);
-            Directory.CreateDirectory(profilesDataDir);
-            string archivePath = Path.Combine(profilesDataDir, "mods.zip");
-
-            string modsDir = Path.Combine(sourceMinecraftDir, "mods");
-            if (!Directory.Exists(modsDir))
+            return Task.Run(() =>
             {
-                task.MaxValue(0);
-                return;
-            }
+                string profilesDataDir = AppPaths.GetProfileDataDir(profileId);
+                Directory.CreateDirectory(profilesDataDir);
+                string archivePath = AppPaths.GetProfileModsArchive(profileId);
 
-            var modFiles = Directory.GetFiles(modsDir, "*", SearchOption.AllDirectories);
-            task.MaxValue(modFiles.Length);
-
-            if (modFiles.Length == 0)
-            {
-                task.Value = 0;
-                return;
-            }
-
-            using (var zipStream = new FileStream(archivePath, FileMode.Create))
-            using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create))
-            {
-                foreach (var filePath in modFiles)
+                string modsDir = Path.Combine(sourceMinecraftDir, "mods");
+                if (!Directory.Exists(modsDir))
                 {
-                    string entryName = Path.GetRelativePath(sourceMinecraftDir, filePath);
-                    archive.CreateEntryFromFile(filePath, entryName);
-                    task.Increment(1);
+                    if (task != null)
+                    {
+                        task.MaxValue = 1;
+                        task.Value = 1;
+                    }
+                    return;
                 }
-            }
+
+                var modFiles = Directory.GetFiles(modsDir, "*", SearchOption.AllDirectories);
+                if (task != null)
+                {
+                    task.MaxValue = Math.Max(1, modFiles.Length);
+                }
+
+                if (modFiles.Length == 0)
+                {
+                    if (task != null) task.Value = task.MaxValue;
+                    return;
+                }
+
+                string tempArchive = archivePath + ".tmp";
+                if (File.Exists(tempArchive))
+                    File.Delete(tempArchive);
+
+                using (var zipStream = new FileStream(tempArchive, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create))
+                {
+                    foreach (var filePath in modFiles)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        string entryName = Path.GetRelativePath(sourceMinecraftDir, filePath);
+                        archive.CreateEntryFromFile(filePath, entryName, CompressionLevel.Fastest);
+                        task?.Increment(1);
+                    }
+                }
+
+                if (File.Exists(archivePath))
+                    File.Delete(archivePath);
+
+                File.Move(tempArchive, archivePath);
+            }, cancellationToken);
         }
 
-        public async Task ExtractModsArchiveAsync(string profileId, string targetMinecraftDir, ProgressTask task)
+        public Task ExtractModsArchiveAsync(string profileId, string targetMinecraftDir, ProgressTask? task = null, CancellationToken cancellationToken = default)
         {
-            string archivePath = Path.Combine("profiles_data", profileId, "mods.zip");
-            if (!File.Exists(archivePath))
+            return Task.Run(() =>
             {
-                task.MaxValue(0);
-                return;
+                string archivePath = AppPaths.GetProfileModsArchive(profileId);
+                if (!File.Exists(archivePath))
+                {
+                    if (task != null)
+                    {
+                        task.MaxValue = 1;
+                        task.Value = 1;
+                    }
+                    return;
+                }
+
+                SafeExtractZip(archivePath, targetMinecraftDir, task, cancellationToken);
+            }, cancellationToken);
+        }
+
+        private static void SafeExtractZip(string zipFilePath, string targetDirectory, ProgressTask? task, CancellationToken cancellationToken)
+        {
+            string fullTargetDir = Path.GetFullPath(targetDirectory);
+            if (!fullTargetDir.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal))
+            {
+                fullTargetDir += Path.DirectorySeparatorChar;
             }
 
-            using (var zipStream = new FileStream(archivePath, FileMode.Open, FileAccess.Read))
-            using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Read))
-            {
-                var entries = archive.Entries;
-                task.MaxValue(entries.Count);
+            using var zipStream = new FileStream(zipFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
 
-                foreach (var entry in entries)
+            var entries = archive.Entries;
+            if (task != null)
+            {
+                task.MaxValue = Math.Max(1, entries.Count);
+            }
+
+            foreach (var entry in entries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (string.IsNullOrEmpty(entry.Name) || entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\'))
                 {
-                    string destinationPath = Path.Combine(targetMinecraftDir, entry.FullName);
-                    Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
-                    entry.ExtractToFile(destinationPath, overwrite: true);
-                    task.Increment(1);
+                    task?.Increment(1);
+                    continue;
                 }
+
+                string destinationPath = Path.GetFullPath(Path.Combine(targetDirectory, entry.FullName));
+                if (!destinationPath.StartsWith(fullTargetDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new SecurityException($"Zip entry '{entry.FullName}' traverses outside target directory '{targetDirectory}'.");
+                }
+
+                string? dir = Path.GetDirectoryName(destinationPath);
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+
+                entry.ExtractToFile(destinationPath, overwrite: true);
+                task?.Increment(1);
             }
         }
     }

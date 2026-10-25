@@ -52,3 +52,11 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# ScopeCLI runtime data
+profiles/
+profiles_data/
+minecraft/
+temp/
+*.upf
+TestResults/
